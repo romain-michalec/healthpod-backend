@@ -45,7 +45,7 @@ Then install the following dependencies:
 
 ```shell
 python3 -m pip install langchain langchain-openai langgraph
-python3 -m pip install "speechrecognition[audio,whisper-local]" colorama
+python3 -m pip install "speechrecognition[audio,whisper-local]" sounddevice colorama
 ```
 
 We also provide a `requirements.txt` file for repeatable installs, created with `python3 -m pip freeze > requirements.txt` at the time of writing:
