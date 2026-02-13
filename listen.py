@@ -1,115 +1,227 @@
-#!/usr/bin/env python3
-
-from multiprocessing.connection import Client
+import argparse
+from multiprocessing.connection import Client, Connection
 from queue import Queue
 from threading import Thread
-from time import sleep
+
+# Silence irrelevant ALSA and JACK warnings
+# https://github.com/Uberi/speech_recognition/issues/182
+import sounddevice
 
 import speech_recognition as sr
 
-from log import Log
 
-mic_id = 9
+def parse_args() -> argparse.Namespace:
+    """Parse the command-line arguments of this program."""
+    parser = argparse.ArgumentParser(
+        description="Speech-to-text interface for the self-screening health station"
+    )
+    parser.add_argument(
+        "-l",
+        "--list-microphones",
+        action="store_true",
+        help="list all available microphones and exit",
+    )
+    parser.add_argument(
+        "-t", "--test-microphone", action="store_true", help="test microphone and exit"
+    )
+    parser.add_argument(
+        "-m",
+        "--microphone",
+        metavar="M",
+        type=int,
+        help="use the specified microphone (if unspecified, the default microphone is used)",
+    )
+    parser.add_argument(
+        "-e",
+        "--energy-threshold",
+        metavar="E",
+        type=int,
+        help="initial energy threshold for sounds (between 0 and 4000; if unspecified, automatic calibration is performed)",
+    )
+    args = parser.parse_args()
+
+    # Ensure that the specified microphone exists
+    if (
+        args.microphone is not None
+        and not 0 <= args.microphone <= get_microphone_count() - 1
+    ):
+        raise IndexError("Device index out of range")
+
+    # Ensure that the specified energy threshold is valid
+    if args.energy_threshold is not None and not 0 <= args.energy_threshold <= 4000:
+        raise ValueError("Energy threshold out of 0-4000")
+
+    return args
 
 
-class Listen:
-    def __init__(self):
-        self.id = "listen"
-        self.logger = Log(self.id)
-        self.logger.startup_msg()
+def get_microphone_count() -> int:
+    """Return the number of available microphones."""
+    return len(sr.Microphone.list_microphone_names())
 
-        self.logger.log("Loading Whisper model...")
-        self.r = sr.Recognizer()
 
-        # List all available microphones
-        self.logger.log("Available microphones:")
-        for index, name in enumerate(sr.Microphone.list_microphone_names()):
-            self.logger.log(f"  {index}: {name}")
+def list_microphones() -> None:
+    """List all available microphones."""
+    for index, name in enumerate(sr.Microphone.list_microphone_names()):
+        print(f"{index}: {name}")
 
-        # Adjust for ambient noise and test microphone
-        with sr.Microphone(device_index=mic_id) as source:
-            self.logger.log("Adjusting for ambient noise... (be quiet)")
-            self.r.adjust_for_ambient_noise(source, duration=2)
-            self.logger.log(f"Energy threshold: {self.r.energy_threshold}")
 
-            self.logger.log("Say something!")
-            try:
-                audio = self.r.listen(source, timeout=None, phrase_time_limit=5)
-                self.logger.log("Got audio!")
-            except Exception as e:
-                self.logger.log_warn(f"Error: {e}")
+def test_microphone(device_index: None | int = None) -> None:
+    pass
 
-        # Queue to hold audio for processing
-        self.audio_queue = Queue()
 
-        self.logger.log_great("Ready.")
+def listen(
+    recognizer: sr.Recognizer,
+    audio_queue: Queue,
+    microphone: sr.Microphone,
+    energy_threshold: None | int = None,
+) -> None:
+    """Capture microphone input.
 
-    def listen(self):
-        listen_thread = Thread(target=self.listen_worker)
-        listen_thread.daemon = True
-        listen_thread.start()
+    This function must be run in a thread. It enqueues the captured
+    audio data in a message queue for consumption by the recognize()
+    function in a different thread.
+    """
+    with microphone as source:
+        # Set the initial energy threshold...
+        if energy_threshold:
+            # ...either by using the value specified by the user...
+            recognizer.energy_threshold = energy_threshold
+        else:
+            # ...or by listening for 1 second (by default) to calibrate
+            # the energy threshold for ambient noise levels
+            print("Adjusting for ambient noise... Please be quiet")
+            recognizer.adjust_for_ambient_noise(source)
+        print(f"Initial energy threshold: {recognizer.energy_threshold}")
 
-    def listen_worker(self):
-        recognize_thread = Thread(target=self.recognize_worker)
-        recognize_thread.daemon = True
-        recognize_thread.start()
-        with sr.Microphone(device_index=mic_id) as source:
-            self.logger.log("Adjusting for ambient noise...")
-            self.r.adjust_for_ambient_noise(source, duration=1)
-            try:
-                while True:
-                    self.logger.log("Listening...")
-                    timed_out = False
-                    try:
-                        audio = self.r.listen(source, phrase_time_limit=10)
-                    except sr.WaitTimeoutError:
-                        timed_out = True
-                        self.logger.log_warn("Listen timeout.")
-                    if not timed_out:
-                        self.audio_queue.put(audio)
-            except KeyboardInterrupt:
-                pass
+        # Repeatedly listen for phrases until the user hits Ctrl+C and
+        # put the resulting audio on the audio processing job queue
+        print("Listening... Say something!")
+        try:
+            while True:
+                audio_queue.put(recognizer.listen(source))
+        except KeyboardInterrupt:
+            pass
 
-        self.audio_queue.join()
-        self.audio_queue.put(None)
-        recognize_thread.join()
+    print("Stopped listening")
 
-    def recognize_worker(self):
-        self.logger.log("Started worker thread.")
+    # Block until all current audio processing jobs are done (empty queue)
+    audio_queue.join()
 
-        # Set up a connection to a running controller
-        self.logger.log("Connecting to controller...")
-        address = ('localhost', 6000)
-        connection = Client(address, authkey=b'secret password')
-        self.logger.log("Connection open")
+    # Tell the other thread that no other audio processing job is coming
+    audio_queue.put(None)
 
-        while True:
-            audio = self.audio_queue.get()
-            if audio is None:
-                break
 
-            utterance = self.r.recognize_whisper(
-                audio, language="English", model="base"
+def recognize(
+    recognizer: sr.Recognizer, audio_queue: Queue, connection: Connection
+) -> None:
+    """Run speech recognition.
+
+    This function must be run in a thread. It dequeues from a message
+    queue holding audio data captured by the listen() function in a
+    different thread.
+    """
+    hallucinations = [
+        "",  # Empty string
+        "Thank you for watching",  # Thank you phrases
+        "Thanks for watching",
+        "Thank you for your attention",
+        "Please subscribe",  # Subscription/engagement prompts
+        "Don't forget to like and subscribe",
+        "Hit the bell icon",
+        "You",  # Filler phrases
+        "Subtitles by the Amara.org community",
+        "MBC 뉴스",  # Korean broadcaster signature
+    ]
+
+    while True:
+        # Retrieve an audio processing job from the queue
+        audio = audio_queue.get()
+
+        # Stop all audio processing if the other thread is done
+        if audio is None:
+            audio_queue.task_done()
+            break
+
+        # Perform speech recognition using Whisper
+        #
+        # Pick "model" from the output of "import whisper;
+        # print(whisper.available_models())" (default "base"). See also
+        # https://github.com/openai/whisper?tab=readme-ov-file#available-models-and-languages.
+        #
+        # Pick "language" from the full language list at
+        # https://github.com/openai/whisper/blob/main/whisper/tokenizer.py.
+        # If not set, Whisper will automatically detect the language.
+        try:
+            utterance = recognizer.recognize_whisper(
+                audio, model="base.en", language="english"
             )
 
-            # Print to the console
-            log = "Utterance:" + utterance
-            self.logger.log(log)
+        except sr.UnknownValueError:
+            # Speech was unintelligible
+            print("Whisper could not understand audio")
 
-            # Send to the controller
+        except sr.RequestError as e:
+            # Whisper was unreachable or unresponsive - is it missing,
+            # corrupt, or otherwise incompatible?
+            print(f"Could not request results from Whisper: {e}")
+
+        else:
+            # Remove leading and trailing whitespace
+            utterance = utterance.strip()
+            print(f"Whisper thinks you said: {utterance}")
+
+            # Reject hallucinations
+            if utterance in hallucinations:
+                continue
+
+            # Send to the coordinator
             connection.send(utterance)
-            self.logger.log("Utterance sent to controller")
+            print(f"Sent to the coordinator: {utterance}")
 
-            self.logger.log("Terminated worker thread.")
-            self.audio_queue.task_done()
+        finally:
+            # Mark the audio processing job as completed in the queue
+            audio_queue.task_done()
 
-        # Close connection to the controller
-        self.logger.log("Closing connection")
-        l.connection.close()
-        self.logger.log("Connection closed")
+
+def main():
+    """Run the speech-to-text interface."""
+    # Parse command-line arguments
+    args = parse_args()
+
+    if args.list_microphones:
+        list_microphones()
+        return
+
+    if args.test_microphone:
+        test_microphone(args.microphone)
+        return
+
+    # Address of the coordinator program (main.py)
+    host = "localhost"  # Hostname or IP address
+    port = 61000  # TCP port used by the server
+
+    # Connect to the coordinator program
+    address = (host, port)
+    print(f"Trying to connect to coordinator at {address}")
+    with Client(address) as connection:  # ConnectionRefusedError if no coordinator
+        print(f"Connected to {address}")  # is running at the specified address
+
+        microphone = sr.Microphone(args.microphone)
+        recognizer = sr.Recognizer()
+
+        # Audio processing job queue (FIFO), used for communication
+        # between the listener thread and the recognizer thread
+        audio_queue = Queue()
+
+        # Start a new thread to recognize audio...
+        worker = Thread(target=recognize, args=(recognizer, audio_queue, connection))
+        worker.start()
+
+        # ...while this thread focuses on listening
+        listen(recognizer, audio_queue, microphone, args.energy_threshold)
+
+    print("Connection closed")
+
 
 if __name__ == "__main__":
-    l = Listen()
-    l.listen()
-    while True:
-        sleep(1)
+    main()

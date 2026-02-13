@@ -12,7 +12,7 @@ The backend is written in Python. It must be run on a computer with sufficient c
 
 * A coordinator program (`main.py`) runs a finite state machine implementing the health check process. It interfaces with a large language model running in the cloud, which provides the conversational part of the interaction with the patient. It also interfaces with the [frontend](https://github.com/harilakshman-333/healthub-main).
 
-* A speech-to-text program (`listen.py`) listens to the patient and sends the text transcript to the coordinator program.
+* A speech-to-text program (`listen.py`) listens to the patient and sends the transcript of what they say to the coordinator program.
 
 * A Bluetooth interface receives the measurements from the wireless medical devices and forwards them to the coordinator program. There is one Bluetooth interface program for each medical device.
 
@@ -37,7 +37,7 @@ On macOS, run `brew install portaudio` instead. On Microsoft Windows, do not ins
 Create a virtual environment using [`venv`](https://docs.python.org/library/venv.html) and activate it:
 
 ```shell
-python3 -m venv [--prompt <prompt>] --upgrade-deps </path/to/new/venv>
+python3 -m venv [--prompt=<prompt>] --upgrade-deps </path/to/new/venv>
 source </path/to/new/venv>/bin/activate
 ```
 
@@ -45,7 +45,7 @@ Then install the following dependencies:
 
 ```shell
 python3 -m pip install langchain langchain-openai langgraph
-python3 -m pip install "speechrecognition[audio,whisper-local]" sounddevice colorama
+python3 -m pip install "speechrecognition[audio,whisper-local]" sounddevice
 ```
 
 We also provide a `requirements.txt` file for repeatable installations, created with `python3 -m pip freeze > requirements.txt` at the time of writing:
@@ -63,12 +63,10 @@ export OPENAI_API_KEY="key_goes_here"
 python3 main.py
 ```
 
-In a second terminal, activate your virtual environment and start the speech-to-text program:
+In a second terminal, activate your virtual environment and start the speech-to-text program. Use option `-h`, `--help` to show all available options. If no microphone is specified on the command line, the default microphone is used:
 
 ```shell
 python3 listen.py
 ```
-
-The speech-to-text program will likely fail initially because the microphone ID is currently hardcoded. Inspect the list of discovered microphones and adjust the `mic_id` variable at the beginning of `listen.py`. Once the program runs successfully, follow the instructions printed in the terminal.
 
 If you only want to test the communication between the speech-to-text program and a dummy receiver, you can run `dummy.py` instead of `main.py`.

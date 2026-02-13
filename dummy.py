@@ -1,23 +1,27 @@
 from multiprocessing.connection import Listener
 
-print("Starting up dummy controller")
-address = ('localhost', 6000)     # family is deduced to be 'AF_INET'
-listener = Listener(address, authkey=b'secret password')
-print("Listening for connections...")
+host = "localhost"
+"""Network interface to listen on.
 
-conn = listener.accept()
-print('Connection accepted from', listener.last_accepted)
+Interface name (such as localhost) or IP address (such as 127.0.0.1). If
+using an empty string, the server will listen for incoming connections
+on all available network interfaces.
+"""
 
-while True:
-    print("Listening for messages...")
-    msg = conn.recv()
-    print("Received:", msg)
-    if 'close connection' in msg.strip().lower():
-        print("Closing connection")
-        conn.close()
-        print("Connection closed")
-        break
+port = 61000
+"""TCP port to listen on."""
 
-print("Shuting down dummy controller")
-listener.close()
-print("No longer listening for connections")
+
+# Basic print-to-stdout server
+address = (host, port)
+with Listener(address) as listener:
+    print(f"Listening for connections on {listener.address}")
+
+    with listener.accept() as connection:  # Block until there is an incoming connection
+        print(f"Connection accepted from {listener.last_accepted}")
+
+        while True:
+            msg = connection.recv()  # Block until there is something to receive
+            print(f"Received: {msg}")
+
+    print("Connection closed")
