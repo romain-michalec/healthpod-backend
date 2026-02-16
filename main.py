@@ -11,9 +11,6 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
-from time import sleep
-
-delay = 1
 
 
 class ConversationState(TypedDict):
@@ -45,16 +42,42 @@ class HealthRobotGraph:
         elif sensor_type == "temperature":
             return round(random.uniform(36.5, 37.5), 1)  # Celsius
 
-    def should_proceed(self, user_input: str) -> bool:
+    def should_proceed(self, user_input: str, current_stage: str = None) -> bool:
         """Use LLM to determine if user wants to proceed"""
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessage(content="""You are analyzing user input in a health sensor conversation.
-            Determine if the user is indicating they want to proceed to the next step.
-            They might say things like: 'yes', 'ready', 'let's go', 'ok', 'done', 'next', 'sure', 'continue', etc.
 
-            Respond with ONLY 'YES' if they want to proceed, or 'NO' if they're asking a question or making conversation.
+        # Map stages to the action the user was asked to perform
+        stage_actions = {
+            "greeting": "getting ready to begin",
+            "heart_rate": "placing their finger on the heart rate sensor",
+            "weight": "stepping onto the scale",
+            "blood_pressure": "sitting comfortably with arm extended for blood pressure measurement",
+            "temperature": "placing the thermometer under their tongue"
+        }
+
+        action_context = stage_actions.get(current_stage, "preparing for the measurement")
+
+        prompt = ChatPromptTemplate.from_messages([
+            SystemMessage(content=f"""You are analyzing user input in a health sensor conversation.
+            The user was asked to complete this action: {action_context}
+
+            Determine if the user is indicating they are READY for the sensor reading to be taken.
+
+            They are ready if they:
+            - Explicitly confirm: 'yes', 'ready', 'ok', 'sure', 'go ahead', 'let's go', 'done', 'good'
+            - State they've completed the action: 'I'm on the scale', 'finger is on the sensor', 'thermometer is under my tongue', 'it's in place', etc.
+            - Even if frustrated, if they confirm the action is complete: 'it is in place!', 'I already did it', 'I told you I'm ready'
+
+            They are NOT ready if they:
+            - Are asking a clarifying question
+            - Are requesting help or more information
+            - Have not yet completed the action
+
+            IMPORTANT: If the user indicates they have completed the requested action (even if phrased differently), they ARE ready.
+
+            Respond with ONLY 'YES' if they are ready to proceed with the sensor reading.
+            Respond with ONLY 'NO' if they are asking a question or haven't completed the action yet.
             """),
-            HumanMessage(content=f"User said: {user_input}\n\nShould we proceed? (YES/NO)")
+            HumanMessage(content=f"User said: {user_input}\n\nAre they ready for the sensor reading? (YES/NO)")
         ])
 
         response = self.llm.invoke(prompt.messages)
@@ -87,60 +110,24 @@ class HealthRobotGraph:
         """Heart rate measurement node"""
         state["robot_response"] = "Great! Let's start with your heart rate. Please place your finger on the sensor."
         state["current_stage"] = "heart_rate"
-
-        # Take reading
-        print("  [Sensor is reading...]")
-        sleep(delay)
-        reading = self.get_sensor_reading("heart_rate")
-        state["readings"]["heart_rate"] = reading
-        print(f"  [Reading complete: {reading}]")
-        print()
-
         return state
 
     def weight_node(self, state: ConversationState) -> ConversationState:
         """Weight measurement node"""
         state["robot_response"] = "Excellent! Next, let's measure your weight. Please step onto the scale."
         state["current_stage"] = "weight"
-
-        # Take reading
-        print("  [Sensor is reading...]")
-        sleep(delay)
-        reading = self.get_sensor_reading("weight")
-        state["readings"]["weight"] = reading
-        print(f"  [Reading complete: {reading}]")
-        print()
-
         return state
 
     def blood_pressure_node(self, state: ConversationState) -> ConversationState:
         """Blood pressure measurement node"""
         state["robot_response"] = "Good! Now let's check your blood pressure. Please sit comfortably and extend your arm."
         state["current_stage"] = "blood_pressure"
-
-        # Take reading
-        print("  [Sensor is reading...]")
-        sleep(delay)
-        reading = self.get_sensor_reading("blood_pressure")
-        state["readings"]["blood_pressure"] = reading
-        print(f"  [Reading complete: {reading}]")
-        print()
-
         return state
 
     def temperature_node(self, state: ConversationState) -> ConversationState:
         """Temperature measurement node"""
         state["robot_response"] = "Almost done! Finally, let's take your temperature. Please place the thermometer on your forehead."
         state["current_stage"] = "temperature"
-
-        # Take reading
-        print("  [Sensor is reading...]")
-        sleep(delay)
-        reading = self.get_sensor_reading("temperature")
-        state["readings"]["temperature"] = reading
-        print(f"  [Reading complete: {reading}]")
-        print()
-
         return state
 
     def complete_node(self, state: ConversationState) -> ConversationState:
@@ -251,7 +238,15 @@ class HealthRobotGraph:
                     continue
 
                 # Check if user wants to proceed
-                if self.should_proceed(user_input):
+                if self.should_proceed(user_input, current_stage):
+                    # Take the sensor reading now that user is ready
+                    if current_stage != "greeting":
+                        print("  [Sensor is reading...]")
+                        reading = self.get_sensor_reading(current_stage)
+                        state["readings"][current_stage] = reading
+                        print(f"  [Reading complete: {reading}]")
+                        print()
+
                     # Move to next stage
                     current_index += 1
                     break
