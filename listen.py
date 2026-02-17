@@ -3,10 +3,9 @@ from multiprocessing.connection import Client, Connection
 from queue import Queue
 from threading import Thread
 
-# Silence irrelevant ALSA and JACK warnings
+# Import sounddevice to silence ALSA and JACK warnings:
 # https://github.com/Uberi/speech_recognition/issues/182
 import sounddevice
-
 import speech_recognition as sr
 
 
@@ -22,21 +21,30 @@ def parse_args() -> argparse.Namespace:
         help="list all available microphones and exit",
     )
     parser.add_argument(
-        "-t", "--test-microphone", action="store_true", help="test microphone and exit"
+        "-t",
+        "--test-microphone",
+        action="store_true",
+        help="test microphone and exit",
     )
     parser.add_argument(
         "-m",
         "--microphone",
         metavar="M",
         type=int,
-        help="use the specified microphone (if unspecified, the default microphone is used)",
+        help=(
+            "use the specified microphone (if unspecified, the default "
+            "microphone is used)"
+        ),
     )
     parser.add_argument(
         "-e",
         "--energy-threshold",
-        metavar="E",
+        metavar="N",
         type=int,
-        help="initial energy threshold for sounds (between 0 and 4000; if unspecified, automatic calibration is performed)",
+        help=(
+            "initial energy threshold for sounds (between 0 and 4000; "
+            "if unspecified, automatic calibration is performed)"
+        ),
     )
     args = parser.parse_args()
 
@@ -121,16 +129,21 @@ def recognize(
     different thread.
     """
     hallucinations = [
-        "",  # Empty string
-        "Thank you for watching",  # Thank you phrases
+        # Empty string
+        "",
+        # Thank you phrases
+        "Thank you for watching",
         "Thanks for watching",
         "Thank you for your attention",
-        "Please subscribe",  # Subscription/engagement prompts
+        # Subscription/engagement prompts
+        "Please subscribe",
         "Don't forget to like and subscribe",
         "Hit the bell icon",
-        "You",  # Filler phrases
+        # Filler phrases
+        "You",
         "Subtitles by the Amara.org community",
-        "MBC 뉴스",  # Korean broadcaster signature
+        # Korean broadcaster signature
+        "MBC 뉴스",
     ]
 
     while True:
@@ -145,14 +158,14 @@ def recognize(
         # Perform speech recognition using Whisper
         #
         # Pick "model" from the output of "import whisper;
-        # print(whisper.available_models())" (default "base"). See also
-        # https://github.com/openai/whisper?tab=readme-ov-file#available-models-and-languages.
+        # print(whisper.available_models())". Default is "base". See also
+        # https://github.com/openai/whisper#available-models-and-languages.
         #
         # Pick "language" from the full language list at
         # https://github.com/openai/whisper/blob/main/whisper/tokenizer.py.
         # If not set, Whisper will automatically detect the language.
         try:
-            utterance = recognizer.recognize_whisper(
+            utterance = recognizer.recognize_whisper(  # type: ignore
                 audio, model="base.en", language="english"
             )
 
@@ -160,14 +173,14 @@ def recognize(
             # Speech was unintelligible
             print("Whisper could not understand audio")
 
-        except sr.RequestError as e:
+        except sr.RequestError as error:
             # Whisper was unreachable or unresponsive - is it missing,
             # corrupt, or otherwise incompatible?
-            print(f"Could not request results from Whisper: {e}")
+            print(f"Could not request results from Whisper: {error}")
 
         else:
-            # Remove leading and trailing whitespace
-            utterance = utterance.strip()
+            # Remove leading whitespace inserted by Whisper
+            utterance = utterance.lstrip()
             print(f"Whisper thinks you said: {utterance}")
 
             # Reject hallucinations
@@ -175,8 +188,12 @@ def recognize(
                 continue
 
             # Send to the coordinator
-            connection.send(utterance)
-            print(f"Sent to the coordinator: {utterance}")
+            try:
+                connection.send(utterance)
+            except ValueError as error:
+                print(f"Could not send utterance to the coordinator: {error}")
+            else:
+                print(f"Sent to the coordinator: {utterance}")
 
         finally:
             # Mark the audio processing job as completed in the queue
@@ -184,7 +201,7 @@ def recognize(
 
 
 def main():
-    """Run the speech-to-text interface."""
+    """Run the speech-to-text interface (this program)."""
     # Parse command-line arguments
     args = parse_args()
 
@@ -196,20 +213,20 @@ def main():
         test_microphone(args.microphone)
         return
 
-    # Address of the coordinator program (main.py)
-    host = "localhost"  # Hostname or IP address
-    port = 61000  # TCP port used by the server
+    # Hostname/IP address and TCP port where the coordinator listens
+    address = (host, port) = ("localhost", 61000)
 
-    # Connect to the coordinator program
-    address = (host, port)
+    # Attempt to set up a connection to the coordinator. Fails with
+    # ConnectionRefusedError if no coordinator is running at the specified
+    # address.
     print(f"Trying to connect to coordinator at {address}")
-    with Client(address) as connection:  # ConnectionRefusedError if no coordinator
-        print(f"Connected to {address}")  # is running at the specified address
+    with Client(address) as connection:
+        print(f"Connected to {address}")
 
         microphone = sr.Microphone(args.microphone)
         recognizer = sr.Recognizer()
 
-        # Audio processing job queue (FIFO), used for communication
+        # Audio processing job queue (FIFO) used for communication
         # between the listener thread and the recognizer thread
         audio_queue = Queue()
 

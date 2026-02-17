@@ -183,8 +183,8 @@ class HealthRobotGraph:
         current_index = 0
 
         # Create network socket
-        address = ('localhost', 6000)
-        listener = Listener(address, authkey=b'secret password')
+        address = ('localhost', 61000)
+        listener = Listener(address)
         print("Listening for connections...")
         connection = listener.accept()
         print('Connection accepted from', listener.last_accepted)
