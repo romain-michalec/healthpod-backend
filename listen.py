@@ -165,7 +165,7 @@ def recognize(
         # https://github.com/openai/whisper/blob/main/whisper/tokenizer.py.
         # If not set, Whisper will automatically detect the language.
         try:
-            utterance = recognizer.recognize_whisper(  # type: ignore
+            utterance = recognizer.recognize_whisper(  # type: ignore[attr-defined]
                 audio, model="base.en", language="english"
             )
 
