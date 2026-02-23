@@ -62,17 +62,18 @@ python3 -m pip install -r requirements.txt
 
 ## Usage
 
-In a first terminal, activate your virtual environment and start the coordinator program:
-
-```shell
-export OPENAI_API_KEY="key_goes_here"
-python3 main.py
-```
-
-In a second terminal, activate your virtual environment and start the speech-to-text program. Use option `-h`, `--help` to show all available options. If no microphone is specified on the command line, the default microphone is used:
+In a first terminal, activate your virtual environment and start the speech-to-text program. Use option `-h`, `--help` to show all available options. If no microphone is specified on the command line using the option `-m`, `--microphone`, the default microphone is used:
 
 ```shell
 python3 listen.py
 ```
 
-If you only want to test the communication between the speech-to-text program and a dummy receiver, you can run `dummy.py` instead of `main.py`.
+In a second terminal, activate your virtual environment and start the demonstration client:
+
+```shell
+python3 dummy_client.py
+```
+
+Speak into the selected microphone ([Harvard sentences](https://www.cs.columbia.edu/%7Ehgs/audio/harvard.html)). The speech-to-text program will pick up what you say and send the recognized text to the client for as long as the client is connected to it. Type `Ctrl+C` to stop the client, you can then restart the client or type `Ctrl+C` to stop the speech-to-text program too.
+
+The coordinator programs (`main_*.py`) don't work in this branch, don't try and use them.

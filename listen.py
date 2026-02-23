@@ -1,7 +1,7 @@
 import argparse
-from multiprocessing.connection import Client, Connection
+from multiprocessing.connection import Connection, Listener
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
 
 # Import sounddevice to silence ALSA and JACK warnings:
 # https://github.com/Uberi/speech_recognition/issues/182
@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
         "-t",
         "--test-microphone",
         action="store_true",
-        help="test microphone and exit",
+        help="test microphone and exit (NOT IMPLEMENTED)",
     )
     parser.add_argument(
         "-m",
@@ -74,12 +74,13 @@ def list_microphones() -> None:
 
 
 def test_microphone(device_index: None | int = None) -> None:
-    pass
+    pass  # TODO: Implement me
 
 
 def listen(
-    recognizer: sr.Recognizer,
     audio_queue: Queue,
+    stop: Event,
+    recognizer: sr.Recognizer,
     microphone: sr.Microphone,
     energy_threshold: None | int = None,
 ) -> None:
@@ -101,26 +102,24 @@ def listen(
             recognizer.adjust_for_ambient_noise(source)
         print(f"Initial energy threshold: {recognizer.energy_threshold}")
 
-        # Repeatedly listen for phrases until the user hits Ctrl+C and
-        # put the resulting audio on the audio processing job queue
+        # Repeatedly listen for phrases until the thread receives the
+        # stop event. Put the resulting audio on the audio processing
+        # job queue. Note that the stop event won't cut off the user.
         print("Listening... Say something!")
-        try:
-            while True:
-                audio_queue.put(recognizer.listen(source))
-        except KeyboardInterrupt:
-            pass
+        while not stop.is_set():
+            audio_queue.put(recognizer.listen(source))
 
     print("Stopped listening")
 
     # Block until all current audio processing jobs are done (empty queue)
     audio_queue.join()
 
-    # Tell the other thread that no other audio processing job is coming
+    # Tell the recognizer thread that no other audio job is coming
     audio_queue.put(None)
 
 
 def recognize(
-    recognizer: sr.Recognizer, audio_queue: Queue, connection: Connection
+    audio_queue: Queue, recognizer: sr.Recognizer, connection: Connection
 ) -> None:
     """Run speech recognition.
 
@@ -187,13 +186,13 @@ def recognize(
             if utterance in hallucinations:
                 continue
 
-            # Send to the coordinator
+            # Send to the conversation graph
             try:
                 connection.send(utterance)
             except ValueError as error:
-                print(f"Could not send utterance to the coordinator: {error}")
+                print(f"Could not send utterance to conversation graph: {error}")
             else:
-                print(f"Sent to the coordinator: {utterance}")
+                print(f"Sent to conversation graph: {utterance}")
 
         finally:
             # Mark the audio processing job as completed in the queue
@@ -213,31 +212,99 @@ def main():
         test_microphone(args.microphone)
         return
 
-    # Hostname/IP address and TCP port where the coordinator listens
+    listening = False
+
+    # Event used by the main thread to stop the listener thread
+    stop = Event()
+
+    # Network interface and TCP port to listen on.
+    #
+    # The network interface can be a hostname (such as localhost), an IP
+    # address (such as 127.0.0.1), or an emptry string (to bind the
+    # listening socket to all the available interfaces).
+    #
+    # Choose a port number in the private range and ideally outside the
+    # operating system's range for ephemeral ports (in /proc/sys/net/
+    # ipv4/ip_local_port_range).
     address = (host, port) = ("localhost", 61000)
 
-    # Attempt to set up a connection to the coordinator. Fails with
-    # ConnectionRefusedError if no coordinator is running at the specified
-    # address.
-    print(f"Trying to connect to coordinator at {address}")
-    with Client(address) as connection:
-        print(f"Connected to {address}")
+    # Listen for incoming connections
+    with Listener(address) as network_listener:
+        print(f"Listening for connections on {network_listener.address}")
 
-        microphone = sr.Microphone(args.microphone)
-        recognizer = sr.Recognizer()
+        while True:
+            try:
+                # The next line blocks until there is an incoming connection
+                with network_listener.accept() as connection:
+                    print(f"Connection accepted from {network_listener.last_accepted}")
 
-        # Audio processing job queue (FIFO) used for communication
-        # between the listener thread and the recognizer thread
-        audio_queue = Queue()
+                    while True:
+                        try:
+                            # The next line blocks until there is something to receive
+                            msg = connection.recv()
 
-        # Start a new thread to recognize audio...
-        worker = Thread(target=recognize, args=(recognizer, audio_queue, connection))
-        worker.start()
+                        except EOFError:
+                            # There is nothing left to receive and the other end was closed
+                            break
 
-        # ...while this thread focuses on listening
-        listen(recognizer, audio_queue, microphone, args.energy_threshold)
+                        else:
+                            print(f"Received: {msg}")
 
-    print("Connection closed")
+                            if not listening and msg == "Start listening":
+
+                                microphone = sr.Microphone(args.microphone)
+                                recognizer = sr.Recognizer()
+
+                                # Task queue (FIFO) used by the listener thread to pass
+                                # audio processing jobs to the recognizer thread
+                                audio_queue = Queue()
+
+                                # Start a thread to listen to the user
+                                listener = Thread(
+                                    target=listen,
+                                    args=(
+                                        audio_queue,
+                                        stop,
+                                        recognizer,
+                                        microphone,
+                                        args.energy_threshold,
+                                    ),
+                                )
+                                listener.start()
+
+                                # Start a thread to recognize the audio
+                                worker = Thread(
+                                    target=recognize,
+                                    args=(audio_queue, recognizer, connection),
+                                )
+                                worker.start()
+
+                                listening = True
+
+                            elif listening and msg == "Stop listening":
+
+                                # Stop listener thread
+                                stop.set()
+
+                                # Wait for both worker threads to be over
+                                listener.join()
+                                worker.join()
+
+                                # Reset the threading event
+                                stop.clear()
+
+                                listening = False
+
+                            else:
+                                pass
+
+                print("Connection closed")
+
+            except KeyboardInterrupt:
+                # The user hit Ctrl+C
+                break
+
+    print("Stopped listening for connections")
 
 
 if __name__ == "__main__":
