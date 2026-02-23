@@ -44,8 +44,14 @@ source </path/to/new/venv>/bin/activate
 Then install the following dependencies:
 
 ```shell
-python3 -m pip install langchain langchain-openai langgraph
+python3 -m pip install langchain langchain-openai langgraph pydantic
 python3 -m pip install "speechrecognition[audio,whisper-local]" sounddevice
+```
+
+For development only:
+
+```shell
+python3 -m pip install pillow
 ```
 
 We also provide a `requirements.txt` file for repeatable installations, created with `python3 -m pip freeze > requirements.txt` at the time of writing:
