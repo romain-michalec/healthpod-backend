@@ -211,14 +211,14 @@ def exercising(state: State) -> State:
 
 def first_recap(state: State) -> ConditionalState:
     """Node function for the first recap node."""
-    recap = data.first_recap + dedent(
+    recap = dedent(
         f"""\
         Smoking: {state["smoking"].lower()}
         Drinking: {state["drinking"].lower()}
         Exercising: {state["exercising"].lower()}
         """
     ).strip()
-    return is_user_ready(state, ai_msg=recap)
+    return is_user_ready(state, ai_msg="\n\n".join([data.first_recap, recap]))
 
 
 def first_recap_out(state: ConditionalState) -> Literal["idle", "tmp"]:
