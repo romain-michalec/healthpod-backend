@@ -21,12 +21,6 @@ def parse_args() -> argparse.Namespace:
         help="list all available microphones and exit",
     )
     parser.add_argument(
-        "-t",
-        "--test-microphone",
-        action="store_true",
-        help="test microphone and exit (NOT IMPLEMENTED)",
-    )
-    parser.add_argument(
         "-m",
         "--microphone",
         metavar="M",
@@ -71,10 +65,6 @@ def list_microphones() -> None:
     """List all available microphones."""
     for index, name in enumerate(sr.Microphone.list_microphone_names()):
         print(f"{index}: {name}")
-
-
-def test_microphone(device_index: None | int = None) -> None:
-    pass  # TODO: Implement me
 
 
 def listen(
@@ -206,10 +196,6 @@ def main():
 
     if args.list_microphones:
         list_microphones()
-        return
-
-    if args.test_microphone:
-        test_microphone(args.microphone)
         return
 
     listening = False
