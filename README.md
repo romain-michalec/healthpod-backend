@@ -10,7 +10,7 @@ The station, or pod, or kiosk, assists patients in using wireless medical device
 
 The backend is written in Python. It must be run on a computer with sufficient computing power to perform automatic speech recognition. It consists of three components:
 
-* A coordinator program (`main.py`) runs a finite state machine implementing the health check process. It interfaces with a large language model running in the cloud, which provides the conversational part of the interaction with the patient. It also interfaces with the [frontend](https://github.com/harilakshman-333/healthub-main).
+* A coordinator program (`main.py`) runs a finite state machine implementing the health check process. It interfaces with a large language model running in the cloud, which provides the conversational part of the interaction with the patient. It also interfaces with the frontend.
 
 * A speech-to-text program (`listen.py`) listens to the patient and sends the transcript of what they say to the coordinator program.
 
@@ -48,7 +48,7 @@ python3 -m pip install langchain langchain-openai langgraph pydantic
 python3 -m pip install "speechrecognition[audio,whisper-local]" sounddevice
 ```
 
-For development only:
+For development only (to visualize the conversation graph):
 
 ```shell
 python3 -m pip install pillow
@@ -62,18 +62,22 @@ python3 -m pip install -r requirements.txt
 
 ## Usage
 
+### Speech-to-text server
+
 In a first terminal, activate your virtual environment and start the speech-to-text program. Use option `-h`, `--help` to show all available options. If no microphone is specified on the command line using the option `-m`, `--microphone`, the default microphone is used:
 
 ```shell
 python3 listen.py
 ```
 
-In a second terminal, activate your virtual environment and start the demonstration client:
+The speech-to-text program acts as a server to a client program that can connect to it on TCP port 61000 and send the strings "Start listening" and "Stop listening" as commands to activate and deactivate speech recognition. When speech recognition is active, the recognized text is sent to the client over the same socket. A demonstration client is provided as an example. In a second terminal, activate your virtual environment and start that client:
 
 ```shell
-python3 dummy_client.py
+python3 demo_client.py
 ```
 
-Speak into the selected microphone ([Harvard sentences](https://www.cs.columbia.edu/%7Ehgs/audio/harvard.html)). The speech-to-text program will pick up what you say and send the recognized text to the client for as long as the client is connected to it. Type `Ctrl+C` to stop the client, you can then restart the client or type `Ctrl+C` to stop the speech-to-text program too.
+Speak into the selected microphone ([Harvard sentences](https://www.cs.columbia.edu/%7Ehgs/audio/harvard.html)). The speech-to-text program picks up what you say and sends the recognized text to the client. Type `Ctrl+C` to stop the client. You can then start the client again or type `Ctrl+C` to stop the speech-to-text server too.
 
-The coordinator programs (`main_*.py`) don't work in this branch, don't try and use them.
+### All the rest
+
+A full, working backend is now in Ronnie's repository.
