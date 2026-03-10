@@ -22,7 +22,7 @@ We are developing and testing on Ubuntu Linux 24.04 LTS with Python 3.12.
 
 ### System-wide dependencies
 
-Use, for example, `apt list --installed python3-{dev,venv,pip,pip-whl}` to ensure that these packages are installed. If not, install them with `sudo apt install ...`.
+Use, for example, `apt list --installed python3-{dev,venv,pip,pip-whl,wheel,wheel-whl}` to ensure that these packages are installed. If not, install them with `sudo apt install ...`.
 
 The speech-to-text program uses SpeechRecognition, which requires PortAudio through its Python bindings PyAudio for [microphone input](https://github.com/Uberi/speech_recognition?tab=readme-ov-file#pyaudio-for-microphone-users). Install PortAudio with:
 
@@ -70,7 +70,7 @@ In a first terminal, activate your virtual environment and start the speech-to-t
 python3 listen.py
 ```
 
-The speech-to-text program acts as a server to a client program that can connect to it on TCP port 61000 and send the strings "Start listening" and "Stop listening" as commands to activate and deactivate speech recognition. When speech recognition is active, the recognized text is sent to the client over the same socket. A demonstration client is provided as an example. In a second terminal, activate your virtual environment and start that client:
+The speech-to-text program acts as a server to a client program that can connect to it on TCP port 61000 and send the strings "Start STT" and "Stop STT" as commands to activate and deactivate speech recognition. When speech recognition is active, the recognized text is sent to the client over the same socket. A demonstration client is provided as an example. In a second terminal, activate your virtual environment and start that client:
 
 ```shell
 python3 demo_client.py

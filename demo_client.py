@@ -6,11 +6,11 @@ ADDRESS = (HOST, PORT) = ("localhost", 61000)
 """Hostname/IP address and TCP port where the STT server listens."""
 
 
-START = "Start listening"
+START = "Start STT"
 """Client command to request the server start listening to the user."""
 
 
-STOP = "Stop listening"
+STOP = "Stop STT"
 """Client command to request the server stop listening to the user."""
 
 
@@ -51,11 +51,11 @@ with Client(ADDRESS) as connection:
     # Successive START/STOP commands can be sent during the same
     # session, for instance:
     #
-    # connection.send(START)
-    # print(f"Request sent again: {START}")
-    # print(connection.recv())  # Pull a single message from the socket
-    # connection.send(STOP)
-    # print(f"Request sent again: {STOP}")
+    connection.send(START)
+    print(f"Request sent again: {START}")
+    print(connection.recv())  # Pull a single message from the socket
+    connection.send(STOP)
+    print(f"Request sent again: {STOP}")
     #
     # However, *beware* that this will re-use the same socket and that
     # the server might have put something from its queue in that socket

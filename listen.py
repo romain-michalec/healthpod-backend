@@ -22,11 +22,11 @@ ip_local_port_range).
 """
 
 
-START = "Start listening"
+START = "Start STT"
 """Client command to request the server start listening to the user."""
 
 
-STOP = "Stop listening"
+STOP = "Stop STT"
 """Client command to request the server stop listening to the user."""
 
 
@@ -60,7 +60,7 @@ https://huggingface.co/datasets/sachaarbonel/whisper-hallucinations
 def parse_args() -> argparse.Namespace:
     """Parse the command-line arguments of this program."""
     parser = argparse.ArgumentParser(
-        description="Speech-to-text interface for the self-screening health station"
+        description="Speech-to-text server for HeartPod"
     )
     parser.add_argument(
         "-l",
@@ -84,9 +84,9 @@ def parse_args() -> argparse.Namespace:
         metavar="N",
         type=int,
         help=(
-            "energy threshold for sounds (between 0 and 4000 - if unspecified, "
-            "automatic calibration is performed before listening and the threshold is "
-            "further adjusted automatically while listening)"
+            "energy threshold for sounds (if unspecified, automatic calibration is "
+            "performed before listening and the threshold is further adjusted "
+            "automatically while listening)"
         ),
     )
     args = parser.parse_args()
@@ -99,8 +99,8 @@ def parse_args() -> argparse.Namespace:
         raise IndexError("Device index out of range")
 
     # Ensure that the specified energy threshold is valid
-    if args.energy_threshold is not None and not 0 <= args.energy_threshold <= 4000:
-        raise ValueError("Energy threshold out of 0-4000")
+    if args.energy_threshold is not None and args.energy_threshold < 0:
+        raise ValueError("Energy threshold cannot be negative")
 
     return args
 
@@ -130,7 +130,7 @@ class STT:
     recognizer: sr.Recognizer
     workers: dict[str, Thread]
     queues: dict[str, Queue]
-    stop_cmd: Event
+    halt: Event
     running: bool
 
     def __init__(self, microphone_id: int | None, energy_threshold: int | None) -> None:
@@ -155,9 +155,9 @@ class STT:
         self.workers = dict()
         self.queues = dict()
 
-        # Threading event used by the main thread to stop the listener
-        # thread (the other threads are stopped in a cascade)
-        self.stop_cmd = Event()
+        # Threading event used by the main thread to stop the worker
+        # threads
+        self.halt = Event()
 
         # Keep track of whether the threads are running
         self.running = False
@@ -197,16 +197,17 @@ class STT:
         if not self.running:
             return
 
-        # Stop listener thread
-        self.stop_cmd.set()
+        # Stop the listener thread (the other threads are stopped in a
+        # cascade)
+        self.halt.set()
 
-        # Wait for both worker threads to be over
+        # Wait for all worker threads to be over
         self.workers["listener"].join()
         self.workers["recognizer"].join()
         self.workers["sender"].join()
 
         # Reset the threading event
-        self.stop_cmd.clear()
+        self.halt.clear()
 
         self.running = False
 
@@ -215,7 +216,7 @@ class STT:
 
         This function must be run in a thread. It enqueues the captured
         audio data in a message queue for consumption by the recognize()
-        function in a different thread.
+        function in the recognizer thread.
         """
         # Repeatedly listen for phrases until the thread receives the
         # stop event. Put the resulting audio on the audio processing
@@ -223,12 +224,13 @@ class STT:
         # mid-sentence.
         with self.microphone as source:
             print("Listening... Say something!")
-            while not self.stop_cmd.is_set():
+            while not self.halt.is_set():
                 self.queues["audio"].put(self.recognizer.listen(source))
 
         print("Stopped listening")
 
-        # Tell the recognizer thread that no other audio job is coming
+        # Use None as a signal to the recognizer thread that no more
+        # audio jobs are coming
         self.queues["audio"].put(None)
 
         # Block until all audio processing jobs are done (empty queue)
@@ -238,14 +240,15 @@ class STT:
         """Run speech recognition.
 
         This function must be run in a thread. It dequeues audio data
-        from a message queue fed by the listen() function in a different
-        thread.
+        from a message queue fed by the listen() function in the
+        listener thread.
         """
         while True:
             # Retrieve an audio processing job from the queue
             audio = self.queues["audio"].get()
 
-            # Stop all audio processing if the other thread is done
+            # Stop all audio processing when told that no more audio
+            # jobs are coming
             if audio is None:
                 self.queues["audio"].task_done()
                 break
@@ -291,7 +294,8 @@ class STT:
 
         print("Stopped recognizing speech")
 
-        # Tell the sender thread that no more recognized speech is coming
+        # Use None as a signal to the sender thread that no more
+        # recognized speech is coming
         self.queues["text"].put(None)
 
         # Block until all sending jobs are done (empty queue)
@@ -301,14 +305,15 @@ class STT:
         """Send recognized speech to connected client.
 
         This function must be run in a thread. It dequeues text data
-        from a message queue fed by the recognize() function in a
-        different thread.
+        from a message queue fed by the recognize() function in the
+        recognizer thread.
         """
         while True:
             # Retrieve recognized speech from the queue
             utterance = self.queues["text"].get()
 
-            # Stop all sending if the other thread is done
+            # Stop all sending when told that no more recognized speech
+            # is coming
             if utterance is None:
                 self.queues["text"].task_done()
                 break
