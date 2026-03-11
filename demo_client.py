@@ -46,30 +46,13 @@ with Client(ADDRESS) as connection:
     connection.send(STOP)
     print(f"Request sent: {STOP}")
 
-    # NOTE
-    #
-    # Successive START/STOP commands can be sent during the same
-    # session, for instance:
-    #
+    # Successive START/STOP commands can be sent on the same connection,
+    # for instance here is a second START/STOP session, used to pull a
+    # single message from the socket:
     connection.send(START)
-    print(f"Request sent again: {START}")
-    print(connection.recv())  # Pull a single message from the socket
+    print(f"Request sent: {START}")
+    print(f"Received from server: {connection.recv()}")
     connection.send(STOP)
-    print(f"Request sent again: {STOP}")
-    #
-    # However, *beware* that this will re-use the same socket and that
-    # the server might have put something from its queue in that socket
-    # after the previous STOP command and before the new START command!
-    #
-    # The STOP command only stops the server from listening to the user,
-    # not from continuing to process what was already recorded, and then
-    # sending the recognized speech on the socket (regardless of whether
-    # the client pulls data from that socket at that point). This
-    # behavior is intentional, but it could be changed if it is
-    # undesirable.
-    #
-    # Contrary to a new START command, a new connection to the server
-    # gets a fresh socket.
-
+    print(f"Request sent: {STOP}")
 
 print("Connection closed")

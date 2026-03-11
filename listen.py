@@ -218,14 +218,19 @@ class STT:
         audio data in a message queue for consumption by the recognize()
         function in the recognizer thread.
         """
-        # Repeatedly listen for phrases until the thread receives the
-        # stop event. Put the resulting audio on the audio processing
-        # job queue. Note that the stop event won't cut off the user
-        # mid-sentence.
         with self.microphone as source:
+            # Repeatedly listen for phrases until the thread receives
+            # the stop event. Put the recorded audio on the audio
+            # processing job queue. Note that a stop event received
+            # mid-sentence won't stop recording that sentence but will
+            # stop the sentence from being processed.
             print("Listening... Say something!")
-            while not self.halt.is_set():
-                self.queues["audio"].put(self.recognizer.listen(source))
+            while True:
+                audio = self.recognizer.listen(source)
+                if self.halt.is_set():
+                    break
+                else:
+                    self.queues["audio"].put(audio)
 
         print("Stopped listening")
 
@@ -252,6 +257,12 @@ class STT:
             if audio is None:
                 self.queues["audio"].task_done()
                 break
+
+            # Don't bother performing speech recognition if the stop
+            # event is on
+            if self.halt.is_set():
+                self.queues["audio"].task_done()
+                continue
 
             # Perform speech recognition using Whisper
             #
@@ -285,8 +296,11 @@ class STT:
                 if utterance in HALLUCINATIONS:
                     continue
 
-                # Put the recognized speech on the sending queue
-                self.queues["text"].put(utterance)
+                # Put the recognized speech on the sending queue, unless
+                # a stop event was received during speech recognition,
+                # in which case the recognized speech shouldn't be sent
+                if not self.halt.is_set():
+                    self.queues["text"].put(utterance)
 
             finally:
                 # Mark the audio processing job as completed in the queue
@@ -318,6 +332,11 @@ class STT:
                 self.queues["text"].task_done()
                 break
 
+            # Don't bother sending anything if the stop event is on
+            if self.halt.is_set():
+                self.queues["text"].task_done()
+                continue
+
             # Send recognized speech over the connection
             try:
                 connection.send(utterance)
@@ -348,6 +367,7 @@ def main():
             stt = STT(args.microphone, args.energy_threshold)
 
             try:
+                print(f"Waiting for an incoming connection on {listener.address}")
                 # The next line blocks until there is an incoming connection
                 with listener.accept() as connection:
                     print(f"Connection accepted from {listener.last_accepted}")
