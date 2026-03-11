@@ -283,7 +283,7 @@ class STT:
             # If not set, Whisper will automatically detect the language.
             try:
                 utterance = self.recognizer.recognize_whisper(  # type: ignore[attr-defined]
-                    audio, model="base.en", language="english"
+                    audio, model="base.en", language="en"
                 )
 
             except sr.UnknownValueError:
