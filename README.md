@@ -12,7 +12,7 @@ The backend is written in Python. It must be run on a computer with sufficient c
 
 * A coordinator program (`main.py`) runs a finite state machine implementing the health check process. It interfaces with a large language model running in the cloud, which provides the conversational part of the interaction with the patient. It also interfaces with the frontend.
 
-* A speech-to-text program (`listen.py`) listens to the patient and sends the transcript of what they say to the coordinator program.
+* A speech-to-text program (`stt_server.py`) listens to the patient and sends the transcript of what they say to the coordinator program.
 
 * A Bluetooth interface receives the measurements from the wireless medical devices and forwards them to the coordinator program. There is one Bluetooth interface program for each medical device.
 
@@ -67,16 +67,16 @@ python3 -m pip install -r requirements.txt
 In a first terminal, activate your virtual environment and start the speech-to-text program. Use option `-h`, `--help` to show all available options. If no microphone is specified on the command line using the option `-m`, `--microphone`, the default microphone is used:
 
 ```shell
-python3 listen.py
+python3 stt_server.py
 ```
 
 The speech-to-text program acts as a server to a client program that can connect to it on TCP port 61000 and send the strings "Start STT" and "Stop STT" as commands to activate and deactivate speech recognition. When speech recognition is active, the recognized text is sent to the client over the same socket. A demonstration client is provided as an example. In a second terminal, activate your virtual environment and start that client:
 
 ```shell
-python3 demo_client.py
+python3 stt_client.py
 ```
 
-Speak into the selected microphone ([Harvard sentences](https://www.cs.columbia.edu/%7Ehgs/audio/harvard.html)). The speech-to-text program picks up what you say and sends the recognized text to the client. Type `Ctrl+C` to stop the client. You can then start the client again or type `Ctrl+C` to stop the speech-to-text server too.
+Speak into the selected microphone ([Harvard sentences](https://www.cs.columbia.edu/%7Ehgs/audio/harvard.html)). The speech-to-text program picks up what you say and sends the recognized text to the client. Type `Ctrl+C` to stop the client. You can then start the client again or type `Ctrl+C` to also stop the speech-to-text server.
 
 ### All the rest
 
