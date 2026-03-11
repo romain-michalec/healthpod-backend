@@ -45,7 +45,8 @@ Then install the following dependencies:
 
 ```shell
 python3 -m pip install langchain langchain-openai langgraph pydantic
-python3 -m pip install "speechrecognition[audio,whisper-local]" sounddevice
+python3 -m pip install "speechrecognition[audio,faster-whisper]" sounddevice
+  # alternatively, use whisper-local for normal Whisper
 ```
 
 For development only (to visualize the conversation graph):

@@ -272,18 +272,32 @@ class STT:
                 self.queue["audio"].task_done()
                 continue
 
-            # Perform speech recognition using Whisper
+            # Perform speech recognition using (Faster) Whisper
             #
-            # Pick "model" from the output of "import whisper;
-            # print(whisper.available_models())". Default is "base". See also
-            # https://github.com/openai/whisper#available-models-and-languages.
+            # SpeechRecognition provides:
             #
-            # Pick "language" from the full language list at
-            # https://github.com/openai/whisper/blob/main/whisper/tokenizer.py.
-            # If not set, Whisper will automatically detect the language.
+            # * sr.Recognizer.recognize_whisper(...)
+            # * sr.Recognizer.recognize_faster_whisper(...)
+            #
+            # Pick "model" from the output of:
+            #
+            # >>> import whisper
+            # >>> print(whisper.available_models())
+            #
+            # Default is "base". See also:
+            #
+            # * https://github.com/openai/whisper#available-models-and-languages
+            #
+            # Pick "language" from the full language list at:
+            #
+            # * https://github.com/openai/whisper/blob/main/whisper/tokenizer.py
+            # * https://github.com/SYSTRAN/faster-whisper/blob/master/faster_whisper/tokenizer.py
+            #
+            # If not set, (Faster) Whisper will automatically detect the
+            # language.
             try:
-                utterance = self.recognizer.recognize_whisper(  # type: ignore[attr-defined]
-                    audio, model="base.en", language="en"
+                utterance = self.recognizer.recognize_faster_whisper(  # type: ignore[attr-defined]
+                    audio, model="small.en", language="en"
                 )
 
             except sr.UnknownValueError:
