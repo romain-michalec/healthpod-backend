@@ -33,6 +33,9 @@ STOP = "Stop STT"
 HALLUCINATIONS = [
     # Empty string
     "",
+    # Random punctuation
+    ".",
+    "...",
     # Thank you phrases
     "Thank you for watching",
     "Thanks for watching",
@@ -46,6 +49,11 @@ HALLUCINATIONS = [
     "Subtitles by the Amara.org community",
     # Korean broadcaster signature
     "MBC 뉴스",
+    # HeartPod-specific hallucinations and text-to-speech occurences
+    "Thank you.",
+    "Thank you very much.",
+    "Ready?",
+    "I didn't quite catch that.",
 ]
 """Whisper hallucinations.
 
