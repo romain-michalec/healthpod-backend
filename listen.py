@@ -128,8 +128,8 @@ class STT:
 
     microphone: sr.Microphone
     recognizer: sr.Recognizer
-    workers: dict[str, Thread]
-    queues: dict[str, Queue]
+    worker: dict[str, Thread]
+    queue: dict[str, Queue]
     halt: Event
     running: bool
 
@@ -152,8 +152,8 @@ class STT:
         print(f"Initial energy threshold: {self.recognizer.energy_threshold}")
 
         # Structures for holding threads and inter-thread communications
-        self.workers = dict()
-        self.queues = dict()
+        self.worker = dict()
+        self.queue = dict()
 
         # Threading event used by the main thread to stop the worker
         # threads
@@ -172,19 +172,19 @@ class STT:
 
         # Threads for listening to the user, recognizing their speech,
         # and sending the recognized speech to the client
-        self.workers["listener"] = Thread(target=self.listen)
-        self.workers["recognizer"] = Thread(target=self.recognize)
-        self.workers["sender"] = Thread(target=self.send, args=(connection,))
+        self.worker["listener"] = Thread(target=self.listen)
+        self.worker["recognizer"] = Thread(target=self.recognize)
+        self.worker["sender"] = Thread(target=self.send, args=(connection,))
 
         # Task queues (FIFO) for passing audio processing jobs from the
         # listener thread to the recognizer thread and text sending jobs
         # from the recognizer thread to the sender thread
-        self.queues["audio"] = Queue()
-        self.queues["text"] = Queue()
+        self.queue["audio"] = Queue()
+        self.queue["text"] = Queue()
 
-        self.workers["listener"].start()
-        self.workers["recognizer"].start()
-        self.workers["sender"].start()
+        self.worker["listener"].start()
+        self.worker["recognizer"].start()
+        self.worker["sender"].start()
 
         self.running = True
 
@@ -202,9 +202,9 @@ class STT:
         self.halt.set()
 
         # Wait for all worker threads to be over
-        self.workers["listener"].join()
-        self.workers["recognizer"].join()
-        self.workers["sender"].join()
+        self.worker["listener"].join()
+        self.worker["recognizer"].join()
+        self.worker["sender"].join()
 
         # Reset the threading event
         self.halt.clear()
@@ -230,16 +230,16 @@ class STT:
                 if self.halt.is_set():
                     break
                 else:
-                    self.queues["audio"].put(audio)
+                    self.queue["audio"].put(audio)
 
         print("Stopped listening")
 
         # Use None as a signal to the recognizer thread that no more
         # audio jobs are coming
-        self.queues["audio"].put(None)
+        self.queue["audio"].put(None)
 
         # Block until all audio processing jobs are done (empty queue)
-        self.queues["audio"].join()
+        self.queue["audio"].join()
 
     def recognize(self) -> None:
         """Run speech recognition.
@@ -250,18 +250,18 @@ class STT:
         """
         while True:
             # Retrieve an audio processing job from the queue
-            audio = self.queues["audio"].get()
+            audio = self.queue["audio"].get()
 
             # Stop all audio processing when told that no more audio
             # jobs are coming
             if audio is None:
-                self.queues["audio"].task_done()
+                self.queue["audio"].task_done()
                 break
 
             # Don't bother performing speech recognition if the stop
             # event is on
             if self.halt.is_set():
-                self.queues["audio"].task_done()
+                self.queue["audio"].task_done()
                 continue
 
             # Perform speech recognition using Whisper
@@ -300,20 +300,20 @@ class STT:
                 # a stop event was received during speech recognition,
                 # in which case the recognized speech shouldn't be sent
                 if not self.halt.is_set():
-                    self.queues["text"].put(utterance)
+                    self.queue["text"].put(utterance)
 
             finally:
                 # Mark the audio processing job as completed in the queue
-                self.queues["audio"].task_done()
+                self.queue["audio"].task_done()
 
         print("Stopped recognizing speech")
 
         # Use None as a signal to the sender thread that no more
         # recognized speech is coming
-        self.queues["text"].put(None)
+        self.queue["text"].put(None)
 
         # Block until all sending jobs are done (empty queue)
-        self.queues["text"].join()
+        self.queue["text"].join()
 
     def send(self, connection: Connection) -> None:
         """Send recognized speech to connected client.
@@ -324,17 +324,17 @@ class STT:
         """
         while True:
             # Retrieve recognized speech from the queue
-            utterance = self.queues["text"].get()
+            utterance = self.queue["text"].get()
 
             # Stop all sending when told that no more recognized speech
             # is coming
             if utterance is None:
-                self.queues["text"].task_done()
+                self.queue["text"].task_done()
                 break
 
             # Don't bother sending anything if the stop event is on
             if self.halt.is_set():
-                self.queues["text"].task_done()
+                self.queue["text"].task_done()
                 continue
 
             # Send recognized speech over the connection
@@ -345,7 +345,7 @@ class STT:
             else:
                 print(f"Sent to client: {utterance}")
             finally:
-                self.queues["text"].task_done()
+                self.queue["text"].task_done()
 
         print("Stopped sending recognized speech to client")
 
