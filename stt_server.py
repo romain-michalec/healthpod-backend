@@ -1,6 +1,7 @@
 import argparse
 from multiprocessing.connection import Connection, Listener
 from queue import Queue
+from string import punctuation
 from threading import Event, Thread
 
 # Import sounddevice to silence ALSA and JACK warnings:
@@ -30,31 +31,21 @@ STOP = "Stop STT"
 """Client command to request the server stop listening to the user."""
 
 
-HALLUCINATIONS = [
-    # Empty string
-    "",
-    # Random punctuation
-    ".",
-    "...",
+HALLUCINATIONS = {
     # Thank you phrases
-    "Thank you for watching",
-    "Thanks for watching",
-    "Thank you for your attention",
+    "thank you",
+    "thank you very much",
+    "thank you for watching",
+    "thanks for watching",
+    "thank you for your attention",
     # Subscription/engagement prompts
-    "Please subscribe",
-    "Don't forget to like and subscribe",
-    "Hit the bell icon",
+    "please subscribe",
+    "don t forget to like and subscribe",
+    "hit the bell icon",
     # Filler phrases
-    "You",
-    "Subtitles by the Amara.org community",
-    # Korean broadcaster signature
-    "MBC 뉴스",
-    # HeartPod-specific hallucinations and text-to-speech occurences
-    "Thank you.",
-    "Thank you very much.",
-    "Ready?",
-    "I didn't quite catch that.",
-]
+    "you",
+    "subtitles by the amara org community",
+}
 """Whisper hallucinations.
 
 Sentences produced by the model when it is fed silence or very
@@ -65,11 +56,27 @@ https://huggingface.co/datasets/sachaarbonel/whisper-hallucinations
 """
 
 
+def suppress_hallucinations(text: str) -> str:
+    """Filter out an hallucinated sentence.
+
+    Return the empty string if the input text is a known Whisper
+    hallucination, otherwise return the input text.
+
+    Matching is performed in lowercase, with punctuation characters
+    replaced with a single space, and whitespace normalized.
+    """
+    punctuation_to_space = str.maketrans(punctuation, len(punctuation) * " ")
+    return (
+        ""
+        if " ".join(text.lower().translate(punctuation_to_space).split())
+        in HALLUCINATIONS
+        else text
+    )
+
+
 def parse_args() -> argparse.Namespace:
     """Parse the command-line arguments of this program."""
-    parser = argparse.ArgumentParser(
-        description="Speech-to-text server for HeartPod"
-    )
+    parser = argparse.ArgumentParser(description="Speech-to-text server for HeartPod")
     parser.add_argument(
         "-l",
         "--list-microphones",
@@ -315,7 +322,7 @@ class STT:
                 print(f"Recognized: {utterance}")
 
                 # Reject hallucinations
-                if utterance in HALLUCINATIONS:
+                if suppress_hallucinations(utterance) == "":
                     continue
 
                 # Put the recognized speech on the sending queue, unless
